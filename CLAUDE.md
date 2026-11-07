@@ -37,7 +37,8 @@ Each continuation row shows (instead of games / score / year / Elo):
   (password in the script default). It must stay the same for app updates.
 - File opening: `MainActivity.openPicker()` (ACTION_OPEN_DOCUMENT), plus "Open with" (VIEW) and Share (SEND)
   intents. Java reads the content:// URI and keeps {name, text, error}; Rust polls `take()` every 500 ms
-  via JNI (`src/android.rs`, using `ndk-context`).
+  via JNI (`src/android.rs`). The activity object comes from `AndroidApp::activity_as_ptr()`. Don't use
+  `ndk-context`: it holds the *Application*, which caused `NoSuchMethodError` for our methods.
 - System bars: the NativeActivity surface covers the whole screen (also under status/navigation bar).
   `MainActivity` records the window insets (OnApplyWindowInsetsListener). Rust polls `insets()` and keeps those
   areas free with dark panels. JNI/picker errors are shown in the status line instead of being ignored.

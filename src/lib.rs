@@ -12,6 +12,7 @@ pub use app::{native_options, run};
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 fn android_main(app: android_activity::AndroidApp) {
+    android::init(&app);
     let mut options = native_options();
     options.android_app = Some(app);
     if let Err(e) = run(options) {

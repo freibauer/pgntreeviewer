@@ -5,6 +5,18 @@
 
 use jni::JNIEnv;
 use jni::objects::{JIntArray, JObject, JObjectArray, JString};
+use std::sync::atomic::{AtomicPtr, Ordering};
+
+/// JavaVM and the `MainActivity` object (JNI global ref owned by android-activity),
+/// set once in `android_main`. Note: `ndk-context` would give the *Application*
+/// object, which does not have our methods.
+static VM: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
+static ACTIVITY: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
+
+pub fn init(app: &android_activity::AndroidApp) {
+    VM.store(app.vm_as_ptr(), Ordering::SeqCst);
+    ACTIVITY.store(app.activity_as_ptr(), Ordering::SeqCst);
+}
 
 /// A file delivered by the Java side: Ok((display name, text)) or Err(message).
 pub type Picked = Result<(String, String), String>;
@@ -12,11 +24,14 @@ pub type Picked = Result<(String, String), String>;
 /// Run `f` with the JNI environment and the activity object. Errors (including
 /// Java exceptions, with their message) are returned as text for the UI.
 fn with_activity<R>(f: impl FnOnce(&mut JNIEnv, &JObject) -> jni::errors::Result<R>) -> Result<R, String> {
-    let ctx = ndk_context::android_context();
-    // SAFETY: android-activity initialises ndk-context with valid VM and activity pointers.
-    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }.map_err(|e| format!("JavaVM: {e}"))?;
+    let (vm_ptr, act_ptr) = (VM.load(Ordering::SeqCst), ACTIVITY.load(Ordering::SeqCst));
+    if vm_ptr.is_null() || act_ptr.is_null() {
+        return Err("activity not initialised".into());
+    }
+    // SAFETY: both pointers come from the AndroidApp, which lives for the whole app run.
+    let vm = unsafe { jni::JavaVM::from_raw(vm_ptr.cast()) }.map_err(|e| format!("JavaVM: {e}"))?;
     let mut env = vm.attach_current_thread().map_err(|e| format!("JNI attach: {e}"))?;
-    let activity = unsafe { JObject::from_raw(ctx.context().cast()) };
+    let activity = unsafe { JObject::from_raw(act_ptr.cast()) };
     let result = f(&mut env, &activity);
     if env.exception_check().unwrap_or(false) {
         let msg = env
