@@ -3,6 +3,10 @@ name = "pgntreeviewer"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "pgntreeviewer"
+crate-type = ["rlib", "cdylib"]
+
 [profile.release]
 opt-level = "s"
 lto = true
@@ -13,5 +17,15 @@ strip = true
 eframe = { version = "0.35.0", default-features = false, features = ["glow", "default_fonts", "persistence", "wayland", "x11"] }
 egui = "0.35.0"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
-rfd = "0.17.2"
 shakmaty = "0.30"
+
+# Desktop only: native file dialog.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rfd = "0.17.2"
+
+# Android only: NativeActivity glue and JNI access to the Java file picker.
+[target.'cfg(target_os = "android")'.dependencies]
+eframe = { version = "0.35.0", default-features = false, features = ["android-native-activity"] }
+android-activity = { version = "0.6", features = ["native-activity"] }
+jni = "0.21"
+ndk-context = "0.1"

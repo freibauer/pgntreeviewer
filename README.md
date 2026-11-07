@@ -12,8 +12,8 @@ you can play from the current position.
 
 ![PGN Tree Viewer](docs/screenshot.png)
 
-Single self-contained executable for **Windows** and **Linux / Ubuntu**. No
-installation, no runtime, no extra files.
+Single self-contained executable for **Windows** and **Linux / Ubuntu**, plus an
+**Android app** (APK). No runtime and no extra files needed.
 
 ## Features
 
@@ -61,10 +61,11 @@ The title shows the PGN's `ChapterName` or `Event` header, or the file name.
 
 ## Download / Build
 
-Prebuilt binaries are in [`dist/`](dist):
+Prebuilt binaries are in [`dist/`](dist) (desktop) and [`android/`](android) (APK):
 
 - `dist/PgnTreeViewer.exe` for Windows 10/11 (only uses standard Windows DLLs)
 - `dist/PgnTreeViewer-linux` for Linux / Ubuntu (x86-64, X11 or Wayland)
+- `android/PgnTreeViewer.apk` for Android 8.0 or newer (64-bit ARM, i.e. practically every phone since 2017)
 
 To build yourself, install [Rust](https://rustup.rs) and run:
 
@@ -85,6 +86,40 @@ On a Windows machine with Rust installed, `cargo build --release` works as well.
 
 Under WSL2 (WSLg), if the program does not start because of Wayland, run it via X11:
 `env -u WAYLAND_DISPLAY ./PgnTreeViewer-linux`.
+
+## Android
+
+**Install:** copy `android/PgnTreeViewer.apk` to the phone (USB, cloud, mail) and tap it.
+Android asks once to allow installing apps from that source (the file manager or browser).
+The app is not in the Play Store and is signed with its own key, so Play Protect may show a warning.
+
+**Open a PGN** in one of three ways:
+- tap the folder icon in the app and pick the file in Android's file picker,
+- tap a `.pgn` file in a file manager / download list and choose *PGN Tree Viewer* under "Open with",
+- *Share* a PGN file (e.g. from a mail or chat app) to *PGN Tree Viewer*.
+
+In portrait mode the board is on top and the move list below it. In landscape mode they are side by side,
+as on the PC.
+
+**Build the APK** (Linux / WSL, no Android Studio or Gradle needed):
+
+```bash
+# one-time setup
+#   JDK 17                 -> ~/android/jdk17     (e.g. Eclipse Temurin)
+#   Android command-line tools -> ~/android/sdk/cmdline-tools/latest
+~/android/sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/android/sdk \
+    "platforms;android-34" "build-tools;34.0.0" "ndk;29.0.14206865"
+rustup target add aarch64-linux-android
+cargo install cargo-ndk
+
+./build-android.sh        # -> android/PgnTreeViewer.apk
+```
+
+The script builds the Rust code as a native library (`cargo ndk`), compiles the small Java activity
+in `android/java/` (Android's file picker and "Open with"), links manifest and icon with `aapt2`,
+then aligns and signs the APK. On the first run it creates a signing key at
+`~/android/keys/pgntreeviewer.jks`. **Keep that file:** an installed app can only be updated by an APK
+signed with the same key. Paths and password can be changed via environment variables (see the script header).
 
 ---
 
@@ -208,13 +243,18 @@ Tips:
 ## Project layout
 
 ```
-src/main.rs           UI: board, arrow, move list, navigation
+src/app.rs            UI: board, arrow, move list, navigation
+src/main.rs           desktop entry point
+src/lib.rs            library + Android entry point
+src/android.rs        JNI bridge to the Java activity (Android only)
 src/pgn.rs            PGN → move tree parser (+ unit tests)
+android/              manifest, launcher icon and MainActivity.java for the APK
 assets/pieces/        piece images (embedded into the binary)
 tools/build_tree.py   grows an analysed opening tree with Stockfish
 tools/make_pieces.py  creates the transparent piece images
 docs/screenshot.png   screenshot for this README
-build.sh / clean.sh   build helpers
+build.sh / clean.sh   desktop build helpers
+build-android.sh      Android APK build
 dist/                 prebuilt binaries
 ```
 
