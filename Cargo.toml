@@ -1,0 +1,17 @@
+[package]
+name = "pgntreeviewer"
+version = "0.1.0"
+edition = "2024"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+
+[dependencies]
+eframe = { version = "0.35.0", default-features = false, features = ["glow", "default_fonts", "persistence", "wayland", "x11"] }
+egui = "0.35.0"
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+rfd = "0.17.2"
+shakmaty = "0.30"

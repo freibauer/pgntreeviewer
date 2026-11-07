@@ -1,0 +1,22 @@
+# Rust build output
+target/
+**/*.rs.bk
+
+# Analysis runs (tools/build_tree.py)
+*.cache.json
+*.tmp
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
