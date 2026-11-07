@@ -23,7 +23,11 @@ Each continuation row shows (instead of games / score / year / Elo):
   open-file icon, ⋮ menu (Open, Reload, Copy FEN, Flip).
 - Right side: grey strip with the current line (start trimmed with "…") and the evaluation of the current position.
   Below it is the list of continuations; click a row to play it, or hover to see the full comment.
-- Dark bottom bar: start, back, forward (selected move), end of line, flip.
+- Dark bottom bar: only backwards navigation, two buttons sharing the full width: start position and one move back.
+  Going forward means tapping a move. Flip and Info are in the ⋮ menu only.
+- Android back button/gesture (egui `Key::BrowserBack`) = one move back; at the start position
+  `moveTaskToBack` (app goes to background).
+- Info dialog: version from Cargo.toml (currently 0.0.1, also the APK versionName) and build date (UTC) from `build.rs`.
 - Keys: ←/→ back/forward, ↑/↓ select row, Enter = forward, Home/End, F = flip.
 - eframe persistence stores only the flip state and window geometry.
 
@@ -64,7 +68,7 @@ Under WSLg the Wayland socket may be unusable. Run with `env -u WAYLAND_DISPLAY`
 
 Test aids (environment variables, used for screenshots only):
 `PGNVIEWER_FILE=x.pgn` preloads a file, `PGNVIEWER_LINE="d4 d5 e4"` opens at that line,
-`PGNVIEWER_PORTRAIT=1` opens a phone-shaped 420×900 window,
+`PGNVIEWER_PORTRAIT=1` opens a phone-shaped 420×900 window, `PGNVIEWER_INFO=1` opens the Info dialog,
 `PGNVIEWER_SCREENSHOT=out.png` saves a screenshot after a few frames and exits.
 
 ## Building / tests

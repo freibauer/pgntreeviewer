@@ -93,3 +93,10 @@ pub fn insets_px() -> Result<[i32; 4], String> {
         Ok(buf)
     })
 }
+
+/// Send the app to the background (Android back at the start position).
+pub fn move_to_background() {
+    let _ = with_activity(|env, act| {
+        env.call_method(act, "moveTaskToBack", "(Z)Z", &[jni::objects::JValue::Bool(1)]).map(|_| ())
+    });
+}

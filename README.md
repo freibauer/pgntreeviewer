@@ -36,7 +36,8 @@ Single self-contained executable for **Windows** and **Linux / Ubuntu**, plus an
 
 1. Start `PgnTreeViewer.exe` (Windows) or `./PgnTreeViewer-linux` (Linux).
 2. Click **Open PGN…** and choose a `.pgn` file.
-3. Click a move in the list to play it. Navigate with the buttons at the bottom or the keyboard:
+3. Click a move in the list to play it. To go back, use the two buttons at the bottom
+   (**|<** start position, **<** one move back) or the keyboard:
 
 | Key | Action |
 |---|---|
@@ -46,7 +47,8 @@ Single self-contained executable for **Windows** and **Linux / Ubuntu**, plus an
 | Home / End | start position / end of the selected line |
 | F | flip board |
 
-The ⋮ menu offers *Open PGN…*, *Reload* (re-read the file from disk), *Copy FEN* and *Flip board*.
+The ⋮ menu offers *Open PGN…*, *Reload* (re-read the file from disk), *Copy FEN*, *Flip board* and
+*Info…* (version and build date).
 The title shows the PGN's `ChapterName` or `Event` header, or the file name.
 
 ### What the viewer reads from the PGN
@@ -98,6 +100,8 @@ The app is not in the Play Store and is signed with its own key, so Play Protect
 - tap a `.pgn` file in a file manager / download list and choose *PGN Tree Viewer* under "Open with",
 - *Share* a PGN file (e.g. from a mail or chat app) to *PGN Tree Viewer*.
 
+Tap a move to play it. The two buttons at the bottom go back to the start or one move back, and so does
+Android's back button or gesture (at the start position it leaves the app). Flip the board via the ⋮ menu.
 In portrait mode the board is on top and the move list below it. In landscape mode they are side by side,
 as on the PC.
 

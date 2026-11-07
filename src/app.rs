@@ -76,6 +76,7 @@ struct App {
     frames: u32,
     /// Android: areas covered by status / navigation bar [left, top, right, bottom] in points.
     insets: [f32; 4],
+    show_info: bool,
 }
 
 impl App {
@@ -106,6 +107,7 @@ impl App {
             screenshot: std::env::var_os("PGNVIEWER_SCREENSHOT").map(PathBuf::from),
             frames: 0,
             insets: [0.0; 4],
+            show_info: std::env::var_os("PGNVIEWER_INFO").is_some(),
         };
         // Test aid only (used for screenshots): PGNVIEWER_FILE preloads a file.
         if let Some(p) = std::env::var_os("PGNVIEWER_FILE") {
@@ -322,6 +324,15 @@ impl eframe::App for App {
             if i.key_pressed(Key::ArrowLeft) {
                 self.back();
             }
+            if i.key_pressed(Key::BrowserBack) {
+                // Android back button/gesture: one move back; at the start position leave the app.
+                if self.tree.as_ref().is_some_and(|t| t.nodes[self.current].parent.is_some()) {
+                    self.back();
+                } else {
+                    #[cfg(target_os = "android")]
+                    crate::android::move_to_background();
+                }
+            }
             if i.key_pressed(Key::ArrowRight) || i.key_pressed(Key::Enter) {
                 self.forward();
             }
@@ -396,6 +407,10 @@ impl eframe::App for App {
                             if ui.button("Flip board (F)").clicked() {
                                 self.flip = !self.flip;
                             }
+                            ui.separator();
+                            if ui.button("Info…").clicked() {
+                                self.show_info = true;
+                            }
                         });
                         ui.add_space(14.0);
                         if icon_button(ui, Icon::Open, "Open PGN…").clicked() {
@@ -409,35 +424,39 @@ impl eframe::App for App {
         egui::Panel::bottom("nav_bar")
             .frame(egui::Frame::new().fill(BAR).inner_margin(egui::Margin::symmetric(8, 10)))
             .show(ui, |ui| {
-                let has_tree = self.tree.is_some();
-                let (can_back, can_fwd) = self
-                    .tree
-                    .as_ref()
-                    .map(|t| (t.nodes[self.current].parent.is_some(), !t.nodes[self.current].children.is_empty()))
-                    .unwrap_or((false, false));
+                // Only backwards navigation: going forward = tapping a move in the list.
+                // The two buttons share the full width so they are easy to reach.
+                let can_back = self.tree.as_ref().is_some_and(|t| t.nodes[self.current].parent.is_some());
                 ui.horizontal(|ui| {
-                    let n = 5.0;
-                    let w = 52.0;
-                    let gap = 22.0;
-                    ui.add_space(((ui.available_width() - n * w - (n - 1.0) * gap) / 2.0).max(0.0));
-                    ui.spacing_mut().item_spacing.x = gap;
-                    if icon_button_enabled(ui, Icon::Start, "Start (Home)", can_back).clicked() {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    let size = Vec2::new(ui.available_width() / 2.0, 52.0);
+                    if icon_button_sized(ui, Icon::Start, "Start position (Home)", can_back, size).clicked() {
                         self.to_start();
                     }
-                    if icon_button_enabled(ui, Icon::Prev, "Back (←)", can_back).clicked() {
+                    if icon_button_sized(ui, Icon::Prev, "One move back (←)", can_back, size).clicked() {
                         self.back();
-                    }
-                    if icon_button_enabled(ui, Icon::Next, "Play selected move (→)", can_fwd).clicked() {
-                        self.forward();
-                    }
-                    if icon_button_enabled(ui, Icon::End, "End of line (End)", can_fwd).clicked() {
-                        self.to_end();
-                    }
-                    if icon_button_enabled(ui, Icon::Flip, "Flip board (F)", has_tree).clicked() {
-                        self.flip = !self.flip;
                     }
                 });
             });
+
+        // ---------------- info dialog ----------------
+        if self.show_info {
+            let modal = egui::Modal::new(egui::Id::new("info")).show(&ctx, |ui| {
+                ui.set_width(280.0);
+                ui.vertical_centered(|ui| {
+                    ui.label(egui::RichText::new("PGN Tree Viewer").size(22.0).strong());
+                    ui.add_space(8.0);
+                    ui.label(egui::RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION"))).size(16.0));
+                    ui.label(egui::RichText::new(format!("Build {}", env!("BUILD_DATE"))).size(16.0));
+                    ui.add_space(12.0);
+                    ui.button(egui::RichText::new("OK").size(18.0)).clicked()
+                })
+                .inner
+            });
+            if modal.inner || modal.should_close() {
+                self.show_info = false;
+            }
+        }
 
         // ---------------- board + move list ----------------
         egui::CentralPanel::default()
@@ -737,9 +756,6 @@ enum Icon {
     Open,
     Start,
     Prev,
-    Next,
-    End,
-    Flip,
 }
 
 fn icon_button(ui: &mut egui::Ui, icon: Icon, tip: &str) -> egui::Response {
@@ -748,7 +764,11 @@ fn icon_button(ui: &mut egui::Ui, icon: Icon, tip: &str) -> egui::Response {
 
 /// Hand-painted white line icons on the dark bars.
 fn icon_button_enabled(ui: &mut egui::Ui, icon: Icon, tip: &str, enabled: bool) -> egui::Response {
-    let size = Vec2::new(52.0, 48.0);
+    icon_button_sized(ui, icon, tip, enabled, Vec2::new(52.0, 48.0))
+}
+
+/// Icon button with a custom hit area (the icon stays centred).
+fn icon_button_sized(ui: &mut egui::Ui, icon: Icon, tip: &str, enabled: bool, size: Vec2) -> egui::Response {
     let sense = if enabled { Sense::click() } else { Sense::hover() };
     let (rect, resp) = ui.allocate_exact_size(size, sense);
     let p = ui.painter_at(rect);
@@ -784,39 +804,14 @@ fn icon_button_enabled(ui: &mut egui::Ui, icon: Icon, tip: &str, enabled: bool) 
             p.line_segment([Pos2::new(r.left(), r.top() - 4.0), Pos2::new(r.left() + 10.0, r.top() - 4.0)], s);
             p.line_segment([Pos2::new(r.left() + 10.0, r.top() - 4.0), Pos2::new(r.left() + 13.0, r.top())], s);
         }
-        Icon::Prev | Icon::Next => {
-            let left = matches!(icon, Icon::Prev);
+        Icon::Prev => {
             p.circle_stroke(c, 20.0, Stroke::new(2.5, col));
-            chevron(&p, c.x + if left { -1.0 } else { 1.0 }, left);
+            chevron(&p, c.x - 1.0, true);
         }
-        Icon::Start | Icon::End => {
-            let left = matches!(icon, Icon::Start);
+        Icon::Start => {
             p.circle_stroke(c, 20.0, Stroke::new(2.5, col));
-            let bar_x = if left { c.x - 8.0 } else { c.x + 8.0 };
-            p.line_segment([Pos2::new(bar_x, c.y - 9.0), Pos2::new(bar_x, c.y + 9.0)], st);
-            chevron(&p, c.x + if left { 3.0 } else { -3.0 }, left);
-        }
-        Icon::Flip => {
-            // Two curved arrows (rotate).
-            let r = 12.0;
-            for (a0, a1) in [(0.3f32, 2.7f32), (3.44, 5.84)] {
-                let pts: Vec<Pos2> = (0..=12)
-                    .map(|k| {
-                        let t = a0 + (a1 - a0) * k as f32 / 12.0;
-                        c + Vec2::new(t.cos(), t.sin()) * r
-                    })
-                    .collect();
-                let end = *pts.last().unwrap();
-                p.add(egui::Shape::line(pts, Stroke::new(2.5, col)));
-                let tang = Vec2::new(-a1.sin(), a1.cos());
-                let back = -tang * 7.0;
-                let side = Vec2::new(a1.cos(), a1.sin()) * 5.0;
-                p.add(egui::Shape::convex_polygon(
-                    vec![end + tang * 4.0, end + back + side, end + back - side],
-                    col,
-                    Stroke::NONE,
-                ));
-            }
+            p.line_segment([Pos2::new(c.x - 8.0, c.y - 9.0), Pos2::new(c.x - 8.0, c.y + 9.0)], st);
+            chevron(&p, c.x + 3.0, true);
         }
     }
     resp.on_hover_text(tip)
