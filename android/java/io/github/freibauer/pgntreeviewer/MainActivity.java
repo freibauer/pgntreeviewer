@@ -6,6 +6,8 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.OpenableColumns;
+import android.view.View;
+import android.view.WindowInsets;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -21,10 +23,25 @@ public class MainActivity extends NativeActivity {
     private String pendingName;
     private String pendingText;
     private String pendingError;
+    /** System bar insets {left, top, right, bottom} in px, updated on the UI thread. */
+    private final int[] insets = new int[4];
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        getWindow().getDecorView().setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            @Override
+            @SuppressWarnings("deprecation")
+            public WindowInsets onApplyWindowInsets(View v, WindowInsets wi) {
+                synchronized (MainActivity.this) {
+                    insets[0] = wi.getSystemWindowInsetLeft();
+                    insets[1] = wi.getSystemWindowInsetTop();
+                    insets[2] = wi.getSystemWindowInsetRight();
+                    insets[3] = wi.getSystemWindowInsetBottom();
+                }
+                return v.onApplyWindowInsets(wi);
+            }
+        });
         handleIntent(getIntent());
     }
 
@@ -46,17 +63,34 @@ public class MainActivity extends NativeActivity {
         if (uri != null) readUri(uri);
     }
 
-    /** Called from Rust: show the system file picker. */
+    /** Called from Rust: show the system file picker. Errors are reported via take(). */
     public void openPicker() {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                i.addCategory(Intent.CATEGORY_OPENABLE);
-                i.setType("*/*");
-                startActivityForResult(i, PICK_PGN);
+                try {
+                    Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    i.addCategory(Intent.CATEGORY_OPENABLE);
+                    i.setType("*/*");
+                    startActivityForResult(i, PICK_PGN);
+                } catch (Exception e) {
+                    synchronized (MainActivity.this) {
+                        pendingName = null;
+                        pendingText = null;
+                        pendingError = "file picker: " + e;
+                    }
+                }
             }
         });
+    }
+
+    /**
+     * Called from Rust: system bar / display cutout insets in pixels
+     * {left, top, right, bottom}. The native surface covers the whole window,
+     * so the app keeps these areas free itself.
+     */
+    public synchronized int[] insets() {
+        return insets.clone();
     }
 
     @Override

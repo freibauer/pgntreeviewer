@@ -38,6 +38,9 @@ Each continuation row shows (instead of games / score / year / Elo):
 - File opening: `MainActivity.openPicker()` (ACTION_OPEN_DOCUMENT), plus "Open with" (VIEW) and Share (SEND)
   intents. Java reads the content:// URI and keeps {name, text, error}; Rust polls `take()` every 500 ms
   via JNI (`src/android.rs`, using `ndk-context`).
+- System bars: the NativeActivity surface covers the whole screen (also under status/navigation bar).
+  `MainActivity` records the window insets (OnApplyWindowInsetsListener). Rust polls `insets()` and keeps those
+  areas free with dark panels. JNI/picker errors are shown in the status line instead of being ignored.
 - Android-specific UI: no Reload, no Copy FEN. Portrait layout (board top, list below) is chosen whenever
   the window is taller than wide, also on desktop.
 - No device or emulator is available here (no KVM access for the user), so the APK is only tested on a real phone.

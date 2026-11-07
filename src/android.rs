@@ -1,35 +1,47 @@
 //! Android glue: talks to `MainActivity.java` (a small NativeActivity
-//! subclass) via JNI to open Android's file picker and to receive the
-//! contents of a picked / "opened with" / shared PGN file.
+//! subclass) via JNI to open Android's file picker, to receive the contents
+//! of a picked / "opened with" / shared PGN file, and to query the system
+//! bar insets.
 
 use jni::JNIEnv;
-use jni::objects::{JObject, JObjectArray, JString};
+use jni::objects::{JIntArray, JObject, JObjectArray, JString};
 
 /// A file delivered by the Java side: Ok((display name, text)) or Err(message).
 pub type Picked = Result<(String, String), String>;
 
-fn with_activity<R>(f: impl FnOnce(&mut JNIEnv, &JObject) -> jni::errors::Result<R>) -> Option<R> {
+/// Run `f` with the JNI environment and the activity object. Errors (including
+/// Java exceptions, with their message) are returned as text for the UI.
+fn with_activity<R>(f: impl FnOnce(&mut JNIEnv, &JObject) -> jni::errors::Result<R>) -> Result<R, String> {
     let ctx = ndk_context::android_context();
     // SAFETY: android-activity initialises ndk-context with valid VM and activity pointers.
-    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }.ok()?;
-    let mut env = vm.attach_current_thread().ok()?;
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }.map_err(|e| format!("JavaVM: {e}"))?;
+    let mut env = vm.attach_current_thread().map_err(|e| format!("JNI attach: {e}"))?;
     let activity = unsafe { JObject::from_raw(ctx.context().cast()) };
     let result = f(&mut env, &activity);
     if env.exception_check().unwrap_or(false) {
-        let _ = env.exception_describe();
+        let msg = env
+            .exception_occurred()
+            .ok()
+            .and_then(|ex| {
+                let _ = env.exception_clear();
+                let s = env.call_method(&ex, "toString", "()Ljava/lang/String;", &[]).ok()?.l().ok()?;
+                env.get_string(&JString::from(s)).ok().map(String::from)
+            })
+            .unwrap_or_else(|| "unknown Java exception".into());
         let _ = env.exception_clear();
+        return Err(msg);
     }
-    result.ok()
+    result.map_err(|e| format!("JNI: {e}"))
 }
 
 /// Show Android's document picker (ACTION_OPEN_DOCUMENT).
-pub fn open_picker() {
-    with_activity(|env, act| env.call_method(act, "openPicker", "()V", &[]).map(|_| ()));
+pub fn open_picker() -> Result<(), String> {
+    with_activity(|env, act| env.call_method(act, "openPicker", "()V", &[]).map(|_| ()))
 }
 
 /// Take the file the Java side has received since the last call, if any.
 pub fn take_picked() -> Option<Picked> {
-    with_activity(|env, act| {
+    let r = with_activity(|env, act| {
         let arr = env.call_method(act, "take", "()[Ljava/lang/String;", &[])?.l()?;
         if arr.is_null() {
             return Ok(None);
@@ -50,6 +62,19 @@ pub fn take_picked() -> Option<Picked> {
             (Some(t), None) => Ok((name.unwrap_or_else(|| "PGN".into()), t)),
             (None, None) => Err("empty file".into()),
         }))
+    });
+    match r {
+        Ok(p) => p,
+        Err(e) => Some(Err(e)),
+    }
+}
+
+/// System bar insets in physical pixels: [left, top, right, bottom].
+pub fn insets_px() -> Result<[i32; 4], String> {
+    with_activity(|env, act| {
+        let arr = JIntArray::from(env.call_method(act, "insets", "()[I", &[])?.l()?);
+        let mut buf = [0i32; 4];
+        env.get_int_array_region(&arr, 0, &mut buf)?;
+        Ok(buf)
     })
-    .flatten()
 }

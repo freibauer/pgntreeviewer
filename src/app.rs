@@ -74,6 +74,8 @@ struct App {
     /// `PGNVIEWER_FILE=x.pgn` preloads a file; `PGNVIEWER_LINE="d4 d5 e4"` opens at that line.
     screenshot: Option<PathBuf>,
     frames: u32,
+    /// Android: areas covered by status / navigation bar [left, top, right, bottom] in points.
+    insets: [f32; 4],
 }
 
 impl App {
@@ -103,6 +105,7 @@ impl App {
             scroll_to_selected: false,
             screenshot: std::env::var_os("PGNVIEWER_SCREENSHOT").map(PathBuf::from),
             frames: 0,
+            insets: [0.0; 4],
         };
         // Test aid only (used for screenshots): PGNVIEWER_FILE preloads a file.
         if let Some(p) = std::env::var_os("PGNVIEWER_FILE") {
@@ -164,7 +167,10 @@ impl App {
 
     #[cfg(target_os = "android")]
     fn open_dialog(&mut self) {
-        crate::android::open_picker();
+        match crate::android::open_picker() {
+            Ok(()) => self.status.clear(),
+            Err(e) => self.status = format!("Cannot open file picker: {e}"),
+        }
     }
 
     /// Android: pick up a file chosen in the picker, opened with / shared to the app.
@@ -177,6 +183,13 @@ impl App {
             }
             Some(Err(e)) => self.status = format!("Cannot open file: {e}"),
             None => {}
+        }
+        match crate::android::insets_px() {
+            Ok(px) => {
+                let ppp = ctx.pixels_per_point();
+                self.insets = px.map(|v| v.max(0) as f32 / ppp);
+            }
+            Err(e) => self.status = format!("Insets: {e}"),
         }
         // The picker result arrives asynchronously; keep checking while idle.
         ctx.request_repaint_after(std::time::Duration::from_millis(500));
@@ -328,6 +341,24 @@ impl eframe::App for App {
                 self.flip = !self.flip;
             }
         });
+
+        // ---------------- system bar areas (Android) ----------------
+        // The native surface covers the whole screen; keep the parts under the
+        // status bar, navigation bar and display cutouts free (dark, like the bars).
+        let [il, it, ir, ib] = self.insets;
+        let pad = |p: egui::Panel| p.frame(egui::Frame::new().fill(BAR)).resizable(false).show_separator_line(false);
+        if it > 0.0 {
+            pad(egui::Panel::top("inset_top")).exact_size(it).show(ui, |_| {});
+        }
+        if ib > 0.0 {
+            pad(egui::Panel::bottom("inset_bottom")).exact_size(ib).show(ui, |_| {});
+        }
+        if il > 0.0 {
+            pad(egui::Panel::left("inset_left")).exact_size(il).show(ui, |_| {});
+        }
+        if ir > 0.0 {
+            pad(egui::Panel::right("inset_right")).exact_size(ir).show(ui, |_| {});
+        }
 
         // ---------------- title bar ----------------
         egui::Panel::top("title_bar")
