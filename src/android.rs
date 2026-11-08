@@ -115,3 +115,11 @@ pub fn last_name() -> Option<String> {
 pub fn open_last() -> Result<(), String> {
     with_activity(|env, act| env.call_method(act, "openLast", "()V", &[]).map(|_| ()))
 }
+
+/// Copy text to the Android clipboard (egui's clipboard does not work on Android).
+pub fn copy_text(text: &str) -> Result<(), String> {
+    with_activity(|env, act| {
+        let t = env.new_string(text)?;
+        env.call_method(act, "copyText", "(Ljava/lang/String;)V", &[(&t).into()]).map(|_| ())
+    })
+}

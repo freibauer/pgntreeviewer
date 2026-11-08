@@ -38,7 +38,8 @@ Single self-contained executable for **Windows** and **Linux / Ubuntu**, plus an
 2. Click **Open PGN…** and choose a `.pgn` file.
    Next time, **Open last PGN** (below *Open PGN…*) opens the same file again with one click.
 3. Click a move in the list to play it. The buttons at the bottom:
-   **Flip** turns the board, **|<** goes to the start position, **<** goes one move back. Keyboard:
+   **Flip** turns the board, **FEN** copies the FEN of the current position to the clipboard,
+   **|<** goes to the start position, **<** goes one move back. Keyboard:
 
 | Key | Action |
 |---|---|
@@ -106,6 +107,7 @@ Tap a move to play it. The buttons at the bottom, from left to right:
 | Button | Action |
 |---|---|
 | **Flip** | flip the board |
+| **FEN** | copies the FEN of the current position to the clipboard |
 | **\|<** | start position |
 | **<** | one move back. Android's back button/gesture does the same; at the start position it leaves the app. |
 

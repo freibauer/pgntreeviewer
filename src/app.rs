@@ -6,7 +6,8 @@
 use crate::pgn;
 use eframe::egui;
 use egui::{Color32, ColorImage, FontId, Key, Pos2, Rect, Sense, Stroke, TextureHandle, TextureOptions, Vec2};
-use shakmaty::{Color, File, Position, Rank, Role, Square};
+use shakmaty::fen::Fen;
+use shakmaty::{Color, EnPassantMode, File, Position, Rank, Role, Square};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -76,6 +77,8 @@ struct App {
     /// Android: areas covered by status / navigation bar [left, top, right, bottom] in points.
     insets: [f32; 4],
     show_info: bool,
+    /// Short confirmation text (e.g. "FEN copied") and the time until it is shown.
+    notice: Option<(String, f64)>,
     /// Name of the last opened PGN (for "Open last PGN").
     last_name: Option<String>,
     /// Desktop: path of the last opened PGN (remembered across starts, never opened automatically).
@@ -117,6 +120,7 @@ impl App {
             frames: 0,
             insets: [0.0; 4],
             show_info: std::env::var_os("PGNVIEWER_INFO").is_some(),
+            notice: None,
             last_name: last_path
                 .as_ref()
                 .and_then(|p| p.file_name())
@@ -297,6 +301,29 @@ impl App {
         }
     }
 
+    fn current_fen(&self) -> Option<String> {
+        let t = self.tree.as_ref()?;
+        Some(Fen::from_position(&t.nodes[self.current].pos, EnPassantMode::Legal).to_string())
+    }
+
+    /// Short confirmation shown for 2 s in the grey info strip.
+    fn notify(&mut self, ctx: &egui::Context, text: &str) {
+        self.notice = Some((text.to_string(), ctx.input(|i| i.time) + 2.0));
+        ctx.request_repaint_after(std::time::Duration::from_millis(2100));
+    }
+
+    fn copy_fen(&mut self, ctx: &egui::Context) {
+        let Some(fen) = self.current_fen() else { return };
+        #[cfg(target_os = "android")]
+        if let Err(e) = crate::android::copy_text(&fen) {
+            self.status = format!("Cannot copy FEN: {e}");
+            return;
+        }
+        #[cfg(not(target_os = "android"))]
+        ctx.copy_text(fen);
+        self.notify(ctx, "FEN copied to clipboard");
+    }
+
     fn title(&self) -> String {
         if let Some(t) = &self.tree {
             for key in ["ChapterName", "Event"] {
@@ -448,14 +475,17 @@ impl eframe::App for App {
             .show(ui, |ui| {
                 // Only backwards navigation: going forward = tapping a move in the list.
                 // The two buttons share the full width so they are easy to reach.
-                // [Flip] [start position] [one move back], sharing the full width.
+                // [Flip] [FEN] [start position] [one move back], sharing the full width.
                 let has_tree = self.tree.is_some();
                 let can_back = self.tree.as_ref().is_some_and(|t| t.nodes[self.current].parent.is_some());
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
-                    let size = Vec2::new(ui.available_width() / 3.0, 52.0);
+                    let size = Vec2::new(ui.available_width() / 4.0, 52.0);
                     if text_button_sized(ui, "Flip", "Flip board (F)", has_tree, size).clicked() {
                         self.flip = !self.flip;
+                    }
+                    if text_button_sized(ui, "FEN", "Copy the FEN of this position", has_tree, size).clicked() {
+                        self.copy_fen(&ctx);
                     }
                     if icon_button_sized(ui, Icon::Start, "Start position (Home)", can_back, size).clicked() {
                         self.to_start();
@@ -547,7 +577,9 @@ impl eframe::App for App {
                 ui.scope_builder(egui::UiBuilder::new().max_rect(right), |ui| {
 
                 // Current line + evaluation of the current position.
-                let line_text = current_line(tree, self.current);
+                let now = ui.input(|i| i.time);
+                let notice = self.notice.as_ref().filter(|(_, until)| now < *until).map(|(t, _)| t.clone());
+                let line_text = notice.unwrap_or_else(|| current_line(tree, self.current));
                 let eval_text = node.eval.map(|e| e.text()).unwrap_or_else(|| "–".into());
                 egui::Frame::new()
                     .fill(Color32::from_rgb(0xf3, 0xf3, 0xf3))

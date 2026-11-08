@@ -26,8 +26,10 @@ Each continuation row shows (instead of games / score / year / Elo):
   open-file icon, ⋮ menu (Open, Reload, Info).
 - Right side: grey strip with the current line (start trimmed with "…") and the evaluation of the current position.
   Below it is the list of continuations; click a row to play it, or hover to see the full comment.
-- Dark bottom bar, three buttons sharing the full width: [Flip] [start position] [one move back].
-  Going forward means tapping a move. (FEN copy and the Chess PGN Master hand-over were removed at the user's request.)
+- Dark bottom bar, four buttons sharing the full width: [Flip] [FEN] [start position] [one move back].
+  Going forward means tapping a move. FEN copies the current FEN (Android: Java `copyText`, because egui's clipboard
+  does not work there). A 2-s confirmation appears in the grey strip. The Chess PGN Master hand-over ("Eng") was removed
+  at the user's request (the current app version accepted none of the hand-overs).
 - Android back button/gesture (egui `Key::BrowserBack`) = one move back; at the start position
   `moveTaskToBack` (app goes to background).
 - Info dialog: version from Cargo.toml (currently 0.0.1, also the APK versionName) and build date (UTC) from `build.rs`.

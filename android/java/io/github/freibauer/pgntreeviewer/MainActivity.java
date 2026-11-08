@@ -1,6 +1,9 @@
 package io.github.freibauer.pgntreeviewer;
 
 import android.app.NativeActivity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
@@ -200,6 +203,17 @@ public class MainActivity extends NativeActivity {
         }
         String last = uri.getLastPathSegment();
         return last != null ? last : "PGN";
+    }
+
+    /** Called from Rust: copy text (the FEN) to the clipboard. */
+    public void copyText(final String text) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("FEN", text));
+            }
+        });
     }
 
     /** Called from Rust: {name, text, error} of a newly received file, or null. */
