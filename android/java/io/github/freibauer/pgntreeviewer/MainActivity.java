@@ -82,7 +82,7 @@ public class MainActivity extends NativeActivity {
                     synchronized (MainActivity.this) {
                         pendingName = null;
                         pendingText = null;
-                        pendingError = "file picker: " + e;
+                        pendingError = "Cannot open file picker: " + e;
                     }
                 }
             }
@@ -123,7 +123,7 @@ public class MainActivity extends NativeActivity {
             synchronized (this) {
                 pendingName = name;
                 pendingText = null;
-                pendingError = e.toString();
+                pendingError = "Cannot open file: " + e;
             }
         }
     }
@@ -167,9 +167,10 @@ public class MainActivity extends NativeActivity {
     }
 
     /**
-     * Called from Rust: hand the position to Chess PGN Master via "share"
-     * (ACTION_SEND, application/x-chess-pgn, as recommended by its author;
-     * fallback application/x-chess-fen). Returns false if the app is not installed.
+     * Called from Rust: hand the position to Chess PGN Master. The PGN is written
+     * to cache/position.pgn and offered via PgnProvider. Android is asked which
+     * hand-over the installed version supports (open file, share file, share
+     * text), and the first match is started. Returns false if not installed.
      */
     public boolean sendToPgnMaster(final String fen, final String pgn) {
         final String pkg = installedPgnMaster();
@@ -177,22 +178,54 @@ public class MainActivity extends NativeActivity {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                String[][] tries = {{"application/x-chess-pgn", pgn}, {"application/x-chess-fen", fen}, {"text/plain", pgn}};
-                for (String[] t : tries) {
-                    try {
-                        Intent i = new Intent(Intent.ACTION_SEND);
-                        i.setType(t[0]);
-                        i.putExtra(Intent.EXTRA_TEXT, t[1]);
-                        i.setPackage(pkg);
-                        startActivity(i);
-                        return;
-                    } catch (ActivityNotFoundException ignored) {
+                String error;
+                try {
+                    java.io.FileOutputStream out = new java.io.FileOutputStream(PgnProvider.file(MainActivity.this));
+                    out.write(pgn.getBytes("UTF-8"));
+                    out.close();
+                    Uri uri = Uri.parse("content://" + PgnProvider.AUTHORITY + "/" + PgnProvider.FILE_NAME);
+                    java.util.List<Intent> tries = new java.util.ArrayList<>();
+                    java.util.List<String> names = new java.util.ArrayList<>();
+                    for (String type : new String[] {"application/x-chess-pgn", "application/vnd.chess-pgn",
+                                                     "text/plain", "application/octet-stream", "*/*"}) {
+                        Intent v = new Intent(Intent.ACTION_VIEW);
+                        v.setDataAndType(uri, type);
+                        tries.add(v);
+                        names.add("VIEW file " + type);
                     }
+                    for (String type : new String[] {"application/x-chess-pgn", "text/plain", "*/*"}) {
+                        Intent st = new Intent(Intent.ACTION_SEND);
+                        st.setType(type);
+                        st.putExtra(Intent.EXTRA_STREAM, uri);
+                        st.setClipData(ClipData.newRawUri(PgnProvider.FILE_NAME, uri));
+                        tries.add(st);
+                        names.add("SEND file " + type);
+                    }
+                    String[][] texts = {{"application/x-chess-pgn", pgn}, {"application/x-chess-fen", fen}, {"text/plain", pgn}};
+                    for (String[] t : texts) {
+                        Intent tx = new Intent(Intent.ACTION_SEND);
+                        tx.setType(t[0]);
+                        tx.putExtra(Intent.EXTRA_TEXT, t[1]);
+                        tries.add(tx);
+                        names.add("SEND text " + t[0]);
+                    }
+                    PackageManager pm = getPackageManager();
+                    for (Intent i : tries) {
+                        i.setPackage(pkg);
+                        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        if (!pm.queryIntentActivities(i, 0).isEmpty()) {
+                            startActivity(i);
+                            return;
+                        }
+                    }
+                    error = "Chess PGN Master (" + pkg + ") accepts none of: " + names;
+                } catch (Exception e) {
+                    error = "Chess PGN Master: " + e;
                 }
                 synchronized (MainActivity.this) {
                     pendingName = null;
                     pendingText = null;
-                    pendingError = "Chess PGN Master does not accept the position";
+                    pendingError = error;
                 }
             }
         });

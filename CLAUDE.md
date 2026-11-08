@@ -26,11 +26,13 @@ Each continuation row shows (instead of games / score / year / Elo):
 - Dark bottom bar, buttons sharing the full width: [Eng] (Android only) [FEN] [start position] [one move back].
   Going forward means tapping a move. Flip and Info are in the ⋮ menu only. Copy FEN is the FEN button
   (Android: via Java `copyText`, because egui's clipboard does not work there). A 2-s confirmation appears in the grey strip.
-- "Eng" (Android): `MainActivity.sendToPgnMaster(fen, pgn)` sends ACTION_SEND with `application/x-chess-pgn`
-  (PGN with SetUp/FEN header and the current line as a comment) to Chess PGN Master by Gerhard Kalab,
-  package `com.kalab.pgnviewerpro` (preferred) or `com.kalab.pgnviewer`. Fallbacks are `application/x-chess-fen` and then
-  `text/plain`. This MIME type and action are what Kalab recommended (talkchess thread, 2013). Not installed: modal
-  offering Google Play (`openPgnMasterInStore`). The manifest has `<queries>` for both packages (Android 11 package visibility).
+- "Eng" (Android): `MainActivity.sendToPgnMaster(fen, pgn)` writes the PGN (SetUp/FEN header, current line as
+  comment) to `cache/position.pgn`, served read-only by `PgnProvider`
+  (`content://io.github.freibauer.pgntreeviewer.pgn/position.pgn`). It then asks `queryIntentActivities` which
+  hand-over Chess PGN Master (Gerhard Kalab, `com.kalab.pgnviewerpro` preferred, else `com.kalab.pgnviewer`)
+  supports, in this order: VIEW file (several MIME types), SEND file (EXTRA_STREAM), SEND text. The first match is started.
+  Plain SEND text (the 2013 recommendation) was rejected by the current version on the user's S21 FE. If nothing matches, the
+  error lists all variants tried. Not installed: modal offering Google Play. The manifest has `<queries>` for both packages.
 - Android back button/gesture (egui `Key::BrowserBack`) = one move back; at the start position
   `moveTaskToBack` (app goes to background).
 - Info dialog: version from Cargo.toml (currently 0.0.1, also the APK versionName) and build date (UTC) from `build.rs`.

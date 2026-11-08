@@ -190,7 +190,7 @@ impl App {
                 self.path = None;
                 self.load_text(&text, &name, false);
             }
-            Some(Err(e)) => self.status = format!("Cannot open file: {e}"),
+            Some(Err(e)) => self.status = e,
             None => {}
         }
         match crate::android::insets_px() {

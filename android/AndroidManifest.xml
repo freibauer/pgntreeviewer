@@ -16,6 +16,13 @@
         android:hasCode="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
+        <!-- Serves cache/position.pgn for the "Eng" hand-over to Chess PGN Master -->
+        <provider
+            android:name=".PgnProvider"
+            android:authorities="io.github.freibauer.pgntreeviewer.pgn"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
