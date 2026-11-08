@@ -4,6 +4,12 @@
 
     <uses-feature android:glEsVersion="0x00020000" android:required="true" />
 
+    <!-- Android 11+: allow checking whether Chess PGN Master (Gerhard Kalab) is installed -->
+    <queries>
+        <package android:name="com.kalab.pgnviewer" />
+        <package android:name="com.kalab.pgnviewerpro" />
+    </queries>
+
     <application
         android:label="PGN Tree Viewer"
         android:icon="@mipmap/ic_launcher"

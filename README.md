@@ -36,8 +36,9 @@ Single self-contained executable for **Windows** and **Linux / Ubuntu**, plus an
 
 1. Start `PgnTreeViewer.exe` (Windows) or `./PgnTreeViewer-linux` (Linux).
 2. Click **Open PGN…** and choose a `.pgn` file.
-3. Click a move in the list to play it. To go back, use the two buttons at the bottom
-   (**|<** start position, **<** one move back) or the keyboard:
+3. Click a move in the list to play it. The buttons at the bottom:
+   **FEN** copies the FEN of the current position to the clipboard, **|<** goes to the start position,
+   **<** goes one move back. Keyboard:
 
 | Key | Action |
 |---|---|
@@ -47,7 +48,7 @@ Single self-contained executable for **Windows** and **Linux / Ubuntu**, plus an
 | Home / End | start position / end of the selected line |
 | F | flip board |
 
-The ⋮ menu offers *Open PGN…*, *Reload* (re-read the file from disk), *Copy FEN*, *Flip board* and
+The ⋮ menu offers *Open PGN…*, *Reload* (re-read the file from disk), *Flip board* and
 *Info…* (version and build date).
 The title shows the PGN's `ChapterName` or `Event` header, or the file name.
 
@@ -100,8 +101,16 @@ The app is not in the Play Store and is signed with its own key, so Play Protect
 - tap a `.pgn` file in a file manager / download list and choose *PGN Tree Viewer* under "Open with",
 - *Share* a PGN file (e.g. from a mail or chat app) to *PGN Tree Viewer*.
 
-Tap a move to play it. The two buttons at the bottom go back to the start or one move back, and so does
-Android's back button or gesture (at the start position it leaves the app). Flip the board via the ⋮ menu.
+Tap a move to play it. The buttons at the bottom, from left to right:
+
+| Button | Action |
+|---|---|
+| **Eng** | opens the current position in [Chess PGN Master](https://play.google.com/store/apps/details?id=com.kalab.pgnviewer) (Gerhard Kalab) for engine analysis. The position is shared as PGN with a `FEN` header, so it uses the Pro version if installed, otherwise the free one. If neither is installed, the app offers to open Google Play. |
+| **FEN** | copies the FEN of the current position to the clipboard |
+| **\|<** | start position |
+| **<** | one move back. Android's back button/gesture does the same; at the start position it leaves the app. |
+
+Flip the board via the ⋮ menu.
 In portrait mode the board is on top and the move list below it. In landscape mode they are side by side,
 as on the PC.
 

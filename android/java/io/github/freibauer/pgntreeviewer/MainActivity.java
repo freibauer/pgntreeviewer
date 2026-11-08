@@ -1,7 +1,12 @@
 package io.github.freibauer.pgntreeviewer;
 
 import android.app.NativeActivity;
+import android.content.ActivityNotFoundException;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
@@ -133,6 +138,81 @@ public class MainActivity extends NativeActivity {
         }
         String last = uri.getLastPathSegment();
         return last != null ? last : "PGN";
+    }
+
+    /** Chess PGN Master by Gerhard Kalab: pro version first, then the free one. */
+    private static final String[] PGN_MASTER = {"com.kalab.pgnviewerpro", "com.kalab.pgnviewer"};
+
+    /** Called from Rust: copy text (the FEN) to the clipboard. */
+    public void copyText(final String text) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("FEN", text));
+            }
+        });
+    }
+
+    private String installedPgnMaster() {
+        PackageManager pm = getPackageManager();
+        for (String p : PGN_MASTER) {
+            try {
+                pm.getPackageInfo(p, 0);
+                return p;
+            } catch (PackageManager.NameNotFoundException ignored) {
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Called from Rust: hand the position to Chess PGN Master via "share"
+     * (ACTION_SEND, application/x-chess-pgn, as recommended by its author;
+     * fallback application/x-chess-fen). Returns false if the app is not installed.
+     */
+    public boolean sendToPgnMaster(final String fen, final String pgn) {
+        final String pkg = installedPgnMaster();
+        if (pkg == null) return false;
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                String[][] tries = {{"application/x-chess-pgn", pgn}, {"application/x-chess-fen", fen}, {"text/plain", pgn}};
+                for (String[] t : tries) {
+                    try {
+                        Intent i = new Intent(Intent.ACTION_SEND);
+                        i.setType(t[0]);
+                        i.putExtra(Intent.EXTRA_TEXT, t[1]);
+                        i.setPackage(pkg);
+                        startActivity(i);
+                        return;
+                    } catch (ActivityNotFoundException ignored) {
+                    }
+                }
+                synchronized (MainActivity.this) {
+                    pendingName = null;
+                    pendingText = null;
+                    pendingError = "Chess PGN Master does not accept the position";
+                }
+            }
+        });
+        return true;
+    }
+
+    /** Called from Rust: open Chess PGN Master in Google Play. */
+    public void openPgnMasterInStore() {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                String id = PGN_MASTER[1];
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + id)));
+                } catch (ActivityNotFoundException e) {
+                    startActivity(new Intent(Intent.ACTION_VIEW,
+                        Uri.parse("https://play.google.com/store/apps/details?id=" + id)));
+                }
+            }
+        });
     }
 
     /** Called from Rust: {name, text, error} of a newly received file, or null. */

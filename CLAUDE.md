@@ -23,8 +23,14 @@ Each continuation row shows (instead of games / score / year / Elo):
   open-file icon, ⋮ menu (Open, Reload, Copy FEN, Flip).
 - Right side: grey strip with the current line (start trimmed with "…") and the evaluation of the current position.
   Below it is the list of continuations; click a row to play it, or hover to see the full comment.
-- Dark bottom bar: only backwards navigation, two buttons sharing the full width: start position and one move back.
-  Going forward means tapping a move. Flip and Info are in the ⋮ menu only.
+- Dark bottom bar, buttons sharing the full width: [Eng] (Android only) [FEN] [start position] [one move back].
+  Going forward means tapping a move. Flip and Info are in the ⋮ menu only. Copy FEN is the FEN button
+  (Android: via Java `copyText`, because egui's clipboard does not work there). A 2-s confirmation appears in the grey strip.
+- "Eng" (Android): `MainActivity.sendToPgnMaster(fen, pgn)` sends ACTION_SEND with `application/x-chess-pgn`
+  (PGN with SetUp/FEN header and the current line as a comment) to Chess PGN Master by Gerhard Kalab,
+  package `com.kalab.pgnviewerpro` (preferred) or `com.kalab.pgnviewer`. Fallbacks are `application/x-chess-fen` and then
+  `text/plain`. This MIME type and action are what Kalab recommended (talkchess thread, 2013). Not installed: modal
+  offering Google Play (`openPgnMasterInStore`). The manifest has `<queries>` for both packages (Android 11 package visibility).
 - Android back button/gesture (egui `Key::BrowserBack`) = one move back; at the start position
   `moveTaskToBack` (app goes to background).
 - Info dialog: version from Cargo.toml (currently 0.0.1, also the APK versionName) and build date (UTC) from `build.rs`.

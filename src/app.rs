@@ -77,6 +77,11 @@ struct App {
     /// Android: areas covered by status / navigation bar [left, top, right, bottom] in points.
     insets: [f32; 4],
     show_info: bool,
+    /// Android: Chess PGN Master is missing -> offer installing it.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    show_install: bool,
+    /// Short confirmation text and the time until it is shown.
+    notice: Option<(String, f64)>,
 }
 
 impl App {
@@ -108,6 +113,8 @@ impl App {
             frames: 0,
             insets: [0.0; 4],
             show_info: std::env::var_os("PGNVIEWER_INFO").is_some(),
+            show_install: false,
+            notice: None,
         };
         // Test aid only (used for screenshots): PGNVIEWER_FILE preloads a file.
         if let Some(p) = std::env::var_os("PGNVIEWER_FILE") {
@@ -266,9 +273,40 @@ impl App {
         }
     }
 
-    fn copy_fen(&self, ctx: &egui::Context) {
-        if let Some(t) = &self.tree {
-            ctx.copy_text(Fen::from_position(&t.nodes[self.current].pos, EnPassantMode::Legal).to_string());
+    fn current_fen(&self) -> Option<String> {
+        let t = self.tree.as_ref()?;
+        Some(Fen::from_position(&t.nodes[self.current].pos, EnPassantMode::Legal).to_string())
+    }
+
+    /// Short confirmation shown for 2 s in the grey info strip.
+    fn notify(&mut self, ctx: &egui::Context, text: &str) {
+        self.notice = Some((text.to_string(), ctx.input(|i| i.time) + 2.0));
+        ctx.request_repaint_after(std::time::Duration::from_millis(2100));
+    }
+
+    fn copy_fen(&mut self, ctx: &egui::Context) {
+        let Some(fen) = self.current_fen() else { return };
+        #[cfg(target_os = "android")]
+        if let Err(e) = crate::android::copy_text(&fen) {
+            self.status = format!("Cannot copy FEN: {e}");
+            return;
+        }
+        #[cfg(not(target_os = "android"))]
+        ctx.copy_text(fen);
+        self.notify(ctx, "FEN copied to clipboard");
+    }
+
+    /// "Eng": hand the current position to Chess PGN Master (Android only).
+    #[cfg(target_os = "android")]
+    fn send_to_engine(&mut self) {
+        let (Some(fen), Some(tree)) = (self.current_fen(), &self.tree) else { return };
+        let line = current_line(tree, self.current);
+        let event = self.title().replace('"', "'");
+        let pgn = format!("[Event \"{event}\"]\n[SetUp \"1\"]\n[FEN \"{fen}\"]\n\n{{ {line} }} *\n");
+        match crate::android::send_to_pgn_master(&fen, &pgn) {
+            Ok(true) => self.status.clear(),
+            Ok(false) => self.show_install = true,
+            Err(e) => self.status = format!("Cannot start Chess PGN Master: {e}"),
         }
     }
 
@@ -401,9 +439,6 @@ impl eframe::App for App {
                             {
                                 self.load(&p, true);
                             }
-                            if cfg!(not(target_os = "android")) && ui.button("Copy FEN").clicked() {
-                                self.copy_fen(&ctx);
-                            }
                             if ui.button("Flip board (F)").clicked() {
                                 self.flip = !self.flip;
                             }
@@ -426,10 +461,20 @@ impl eframe::App for App {
             .show(ui, |ui| {
                 // Only backwards navigation: going forward = tapping a move in the list.
                 // The two buttons share the full width so they are easy to reach.
+                // Left: "Eng" (Android: open position in Chess PGN Master) and "FEN" (copy).
+                let has_tree = self.tree.is_some();
                 let can_back = self.tree.as_ref().is_some_and(|t| t.nodes[self.current].parent.is_some());
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
-                    let size = Vec2::new(ui.available_width() / 2.0, 52.0);
+                    let n = if cfg!(target_os = "android") { 4.0 } else { 3.0 };
+                    let size = Vec2::new(ui.available_width() / n, 52.0);
+                    #[cfg(target_os = "android")]
+                    if text_button_sized(ui, "Eng", "Analyse the position in Chess PGN Master", has_tree, size).clicked() {
+                        self.send_to_engine();
+                    }
+                    if text_button_sized(ui, "FEN", "Copy the FEN of this position", has_tree, size).clicked() {
+                        self.copy_fen(&ctx);
+                    }
                     if icon_button_sized(ui, Icon::Start, "Start position (Home)", can_back, size).clicked() {
                         self.to_start();
                     }
@@ -438,6 +483,36 @@ impl eframe::App for App {
                     }
                 });
             });
+
+        // ---------------- "Chess PGN Master not installed" ----------------
+        #[cfg(target_os = "android")]
+        if self.show_install {
+            let modal = egui::Modal::new(egui::Id::new("install")).show(&ctx, |ui| {
+                ui.set_width(300.0);
+                ui.vertical_centered(|ui| {
+                    ui.label(egui::RichText::new("Chess PGN Master").size(20.0).strong());
+                    ui.add_space(8.0);
+                    ui.label(
+                        egui::RichText::new("is not installed. \"Eng\" opens the position in this app for engine analysis.")
+                            .size(16.0),
+                    );
+                    ui.add_space(12.0);
+                    ui.horizontal(|ui| {
+                        let store = ui.button(egui::RichText::new("Install (Google Play)").size(17.0)).clicked();
+                        let cancel = ui.button(egui::RichText::new("Cancel").size(17.0)).clicked();
+                        if store {
+                            crate::android::open_pgn_master_in_store();
+                        }
+                        store || cancel
+                    })
+                    .inner
+                })
+                .inner
+            });
+            if modal.inner || modal.should_close() {
+                self.show_install = false;
+            }
+        }
 
         // ---------------- info dialog ----------------
         if self.show_info {
@@ -511,7 +586,9 @@ impl eframe::App for App {
                 ui.scope_builder(egui::UiBuilder::new().max_rect(right), |ui| {
 
                 // Current line + evaluation of the current position.
-                let line_text = current_line(tree, self.current);
+                let now = ui.input(|i| i.time);
+                let notice = self.notice.as_ref().filter(|(_, until)| now < *until).map(|(t, _)| t.clone());
+                let line_text = notice.clone().unwrap_or_else(|| current_line(tree, self.current));
                 let eval_text = node.eval.map(|e| e.text()).unwrap_or_else(|| "–".into());
                 egui::Frame::new()
                     .fill(Color32::from_rgb(0xf3, 0xf3, 0xf3))
@@ -765,6 +842,24 @@ fn icon_button(ui: &mut egui::Ui, icon: Icon, tip: &str) -> egui::Response {
 /// Hand-painted white line icons on the dark bars.
 fn icon_button_enabled(ui: &mut egui::Ui, icon: Icon, tip: &str, enabled: bool) -> egui::Response {
     icon_button_sized(ui, icon, tip, enabled, Vec2::new(52.0, 48.0))
+}
+
+/// Text button on the dark bars (e.g. "FEN", "Eng") with a custom hit area.
+fn text_button_sized(ui: &mut egui::Ui, label: &str, tip: &str, enabled: bool, size: Vec2) -> egui::Response {
+    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let (rect, resp) = ui.allocate_exact_size(size, sense);
+    let col = if !enabled {
+        Color32::from_gray(90)
+    } else if resp.hovered() {
+        Color32::WHITE
+    } else {
+        Color32::from_gray(225)
+    };
+    let p = ui.painter_at(rect);
+    let pill = Rect::from_center_size(rect.center(), Vec2::new(64.0, 40.0));
+    p.rect_stroke(pill, 20.0, Stroke::new(2.5, col), egui::StrokeKind::Middle);
+    p.text(rect.center(), egui::Align2::CENTER_CENTER, label, FontId::proportional(18.0), col);
+    resp.on_hover_text(tip)
 }
 
 /// Icon button with a custom hit area (the icon stays centred).

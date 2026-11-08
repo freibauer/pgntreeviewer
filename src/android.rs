@@ -100,3 +100,26 @@ pub fn move_to_background() {
         env.call_method(act, "moveTaskToBack", "(Z)Z", &[jni::objects::JValue::Bool(1)]).map(|_| ())
     });
 }
+
+/// Copy text to the Android clipboard (egui's clipboard does not work on Android).
+pub fn copy_text(text: &str) -> Result<(), String> {
+    with_activity(|env, act| {
+        let t = env.new_string(text)?;
+        env.call_method(act, "copyText", "(Ljava/lang/String;)V", &[(&t).into()]).map(|_| ())
+    })
+}
+
+/// Hand the position to Chess PGN Master. Ok(false) = the app is not installed.
+pub fn send_to_pgn_master(fen: &str, pgn: &str) -> Result<bool, String> {
+    with_activity(|env, act| {
+        let f = env.new_string(fen)?;
+        let p = env.new_string(pgn)?;
+        env.call_method(act, "sendToPgnMaster", "(Ljava/lang/String;Ljava/lang/String;)Z", &[(&f).into(), (&p).into()])?
+            .z()
+    })
+}
+
+/// Open Chess PGN Master in Google Play.
+pub fn open_pgn_master_in_store() {
+    let _ = with_activity(|env, act| env.call_method(act, "openPgnMasterInStore", "()V", &[]).map(|_| ()));
+}
