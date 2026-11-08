@@ -1,12 +1,8 @@
 package io.github.freibauer.pgntreeviewer;
 
 import android.app.NativeActivity;
-import android.content.ActivityNotFoundException;
-import android.content.ClipData;
-import android.content.ClipboardManager;
-import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
+import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
@@ -15,6 +11,9 @@ import android.view.View;
 import android.view.WindowInsets;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 
 /**
@@ -65,7 +64,7 @@ public class MainActivity extends NativeActivity {
         } else if (Intent.ACTION_SEND.equals(intent.getAction())) {
             uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
         }
-        if (uri != null) readUri(uri);
+        if (uri != null) readUri(uri, false);
     }
 
     /** Called from Rust: show the system file picker. Errors are reported via take(). */
@@ -77,6 +76,7 @@ public class MainActivity extends NativeActivity {
                     Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                     i.addCategory(Intent.CATEGORY_OPENABLE);
                     i.setType("*/*");
+                    i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
                     startActivityForResult(i, PICK_PGN);
                 } catch (Exception e) {
                     synchronized (MainActivity.this) {
@@ -102,29 +102,91 @@ public class MainActivity extends NativeActivity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == PICK_PGN && resultCode == RESULT_OK && data != null && data.getData() != null) {
-            readUri(data.getData());
+            readUri(data.getData(), true);
         }
     }
 
-    private void readUri(Uri uri) {
+    private static String readAll(InputStream in) throws java.io.IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[64 * 1024];
+        int n;
+        while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        return out.toString("UTF-8");
+    }
+
+    private synchronized void deliver(String name, String text, String error) {
+        pendingName = name;
+        pendingText = text;
+        pendingError = error;
+    }
+
+    /** Read a picked / opened / shared file and remember it as "last PGN". */
+    private void readUri(Uri uri, boolean persistable) {
         String name = displayName(uri);
         try (InputStream in = getContentResolver().openInputStream(uri)) {
             if (in == null) throw new java.io.IOException("cannot open " + uri);
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            byte[] buf = new byte[64 * 1024];
-            int n;
-            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
-            synchronized (this) {
-                pendingName = name;
-                pendingText = out.toString("UTF-8");
-                pendingError = null;
-            }
+            String text = readAll(in);
+            deliver(name, text, null);
+            rememberLast(uri, name, text, persistable);
         } catch (Exception e) {
-            synchronized (this) {
-                pendingName = name;
-                pendingText = null;
-                pendingError = "Cannot open file: " + e;
+            deliver(name, null, "Cannot open file: " + e);
+        }
+    }
+
+    // ---------- "Open last PGN" ----------
+    private static final String PREFS = "pgntreeviewer";
+
+    private File lastCopy() {
+        return new File(getFilesDir(), "last.pgn");
+    }
+
+    /**
+     * Keep the URI (with a persistable read permission when it came from the
+     * picker, so the current file content can be re-read) and a private copy
+     * as fallback (for "Open with"/"Share" URIs, which cannot be kept).
+     */
+    private void rememberLast(Uri uri, String name, String text, boolean persistable) {
+        if (persistable) {
+            try {
+                getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (Exception ignored) {
             }
+        }
+        try (FileOutputStream out = new FileOutputStream(lastCopy())) {
+            out.write(text.getBytes("UTF-8"));
+        } catch (Exception ignored) {
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putString("lastUri", uri.toString())
+            .putString("lastName", name)
+            .apply();
+    }
+
+    /** Called from Rust: display name of the last opened PGN, or null. */
+    public String lastName() {
+        if (!lastCopy().exists()) return null;
+        return getSharedPreferences(PREFS, MODE_PRIVATE).getString("lastName", null);
+    }
+
+    /** Called from Rust: open the last PGN again (current file if still readable, else the saved copy). */
+    public void openLast() {
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        String name = prefs.getString("lastName", "PGN");
+        String uri = prefs.getString("lastUri", null);
+        if (uri != null) {
+            try (InputStream in = getContentResolver().openInputStream(Uri.parse(uri))) {
+                if (in != null) {
+                    deliver(name, readAll(in), null);
+                    return;
+                }
+            } catch (Exception ignored) {
+                // permission gone or file moved: use the copy
+            }
+        }
+        try (InputStream in = new FileInputStream(lastCopy())) {
+            deliver(name, readAll(in), null);
+        } catch (Exception e) {
+            deliver(name, null, "Cannot open last PGN: " + e);
         }
     }
 
@@ -138,114 +200,6 @@ public class MainActivity extends NativeActivity {
         }
         String last = uri.getLastPathSegment();
         return last != null ? last : "PGN";
-    }
-
-    /** Chess PGN Master by Gerhard Kalab: pro version first, then the free one. */
-    private static final String[] PGN_MASTER = {"com.kalab.pgnviewerpro", "com.kalab.pgnviewer"};
-
-    /** Called from Rust: copy text (the FEN) to the clipboard. */
-    public void copyText(final String text) {
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("FEN", text));
-            }
-        });
-    }
-
-    private String installedPgnMaster() {
-        PackageManager pm = getPackageManager();
-        for (String p : PGN_MASTER) {
-            try {
-                pm.getPackageInfo(p, 0);
-                return p;
-            } catch (PackageManager.NameNotFoundException ignored) {
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Called from Rust: hand the position to Chess PGN Master. The PGN is written
-     * to cache/position.pgn and offered via PgnProvider. Android is asked which
-     * hand-over the installed version supports (open file, share file, share
-     * text), and the first match is started. Returns false if not installed.
-     */
-    public boolean sendToPgnMaster(final String fen, final String pgn) {
-        final String pkg = installedPgnMaster();
-        if (pkg == null) return false;
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                String error;
-                try {
-                    java.io.FileOutputStream out = new java.io.FileOutputStream(PgnProvider.file(MainActivity.this));
-                    out.write(pgn.getBytes("UTF-8"));
-                    out.close();
-                    Uri uri = Uri.parse("content://" + PgnProvider.AUTHORITY + "/" + PgnProvider.FILE_NAME);
-                    java.util.List<Intent> tries = new java.util.ArrayList<>();
-                    java.util.List<String> names = new java.util.ArrayList<>();
-                    for (String type : new String[] {"application/x-chess-pgn", "application/vnd.chess-pgn",
-                                                     "text/plain", "application/octet-stream", "*/*"}) {
-                        Intent v = new Intent(Intent.ACTION_VIEW);
-                        v.setDataAndType(uri, type);
-                        tries.add(v);
-                        names.add("VIEW file " + type);
-                    }
-                    for (String type : new String[] {"application/x-chess-pgn", "text/plain", "*/*"}) {
-                        Intent st = new Intent(Intent.ACTION_SEND);
-                        st.setType(type);
-                        st.putExtra(Intent.EXTRA_STREAM, uri);
-                        st.setClipData(ClipData.newRawUri(PgnProvider.FILE_NAME, uri));
-                        tries.add(st);
-                        names.add("SEND file " + type);
-                    }
-                    String[][] texts = {{"application/x-chess-pgn", pgn}, {"application/x-chess-fen", fen}, {"text/plain", pgn}};
-                    for (String[] t : texts) {
-                        Intent tx = new Intent(Intent.ACTION_SEND);
-                        tx.setType(t[0]);
-                        tx.putExtra(Intent.EXTRA_TEXT, t[1]);
-                        tries.add(tx);
-                        names.add("SEND text " + t[0]);
-                    }
-                    PackageManager pm = getPackageManager();
-                    for (Intent i : tries) {
-                        i.setPackage(pkg);
-                        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                        if (!pm.queryIntentActivities(i, 0).isEmpty()) {
-                            startActivity(i);
-                            return;
-                        }
-                    }
-                    error = "Chess PGN Master (" + pkg + ") accepts none of: " + names;
-                } catch (Exception e) {
-                    error = "Chess PGN Master: " + e;
-                }
-                synchronized (MainActivity.this) {
-                    pendingName = null;
-                    pendingText = null;
-                    pendingError = error;
-                }
-            }
-        });
-        return true;
-    }
-
-    /** Called from Rust: open Chess PGN Master in Google Play. */
-    public void openPgnMasterInStore() {
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                String id = PGN_MASTER[1];
-                try {
-                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + id)));
-                } catch (ActivityNotFoundException e) {
-                    startActivity(new Intent(Intent.ACTION_VIEW,
-                        Uri.parse("https://play.google.com/store/apps/details?id=" + id)));
-                }
-            }
-        });
     }
 
     /** Called from Rust: {name, text, error} of a newly received file, or null. */

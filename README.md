@@ -29,16 +29,16 @@ Single self-contained executable for **Windows** and **Linux / Ubuntu**, plus an
 - Grey info strip with the current line and the evaluation of the current position.
 - Yellow arrow for the last move played.
 - Hover over a row to see the full move comment.
-- Flip the board, copy the FEN of the current position.
+- Flip the board; reopen the last PGN with one tap.
 - Positive evaluations are shown in green, negative in red (threshold ±0.30).
 
 ## Usage
 
 1. Start `PgnTreeViewer.exe` (Windows) or `./PgnTreeViewer-linux` (Linux).
 2. Click **Open PGN…** and choose a `.pgn` file.
+   Next time, **Open last PGN** (below *Open PGN…*) opens the same file again with one click.
 3. Click a move in the list to play it. The buttons at the bottom:
-   **FEN** copies the FEN of the current position to the clipboard, **|<** goes to the start position,
-   **<** goes one move back. Keyboard:
+   **Flip** turns the board, **|<** goes to the start position, **<** goes one move back. Keyboard:
 
 | Key | Action |
 |---|---|
@@ -48,7 +48,7 @@ Single self-contained executable for **Windows** and **Linux / Ubuntu**, plus an
 | Home / End | start position / end of the selected line |
 | F | flip board |
 
-The ⋮ menu offers *Open PGN…*, *Reload* (re-read the file from disk), *Flip board* and
+The ⋮ menu offers *Open PGN…*, *Reload* (re-read the file from disk) and
 *Info…* (version and build date).
 The title shows the PGN's `ChapterName` or `Event` header, or the file name.
 
@@ -105,12 +105,11 @@ Tap a move to play it. The buttons at the bottom, from left to right:
 
 | Button | Action |
 |---|---|
-| **Eng** | opens the current position in [Chess PGN Master](https://play.google.com/store/apps/details?id=com.kalab.pgnviewer) (Gerhard Kalab) for engine analysis. The position is shared as PGN with a `FEN` header, so it uses the Pro version if installed, otherwise the free one. If neither is installed, the app offers to open Google Play. |
-| **FEN** | copies the FEN of the current position to the clipboard |
+| **Flip** | flip the board |
 | **\|<** | start position |
 | **<** | one move back. Android's back button/gesture does the same; at the start position it leaves the app. |
 
-Flip the board via the ⋮ menu.
+**Open last PGN** on the start screen reopens the last file (the app keeps access to it, plus a private copy as fallback).
 In portrait mode the board is on top and the move list below it. In landscape mode they are side by side,
 as on the PC.
 

@@ -101,25 +101,17 @@ pub fn move_to_background() {
     });
 }
 
-/// Copy text to the Android clipboard (egui's clipboard does not work on Android).
-pub fn copy_text(text: &str) -> Result<(), String> {
+/// Display name of the last opened PGN, if any.
+pub fn last_name() -> Option<String> {
     with_activity(|env, act| {
-        let t = env.new_string(text)?;
-        env.call_method(act, "copyText", "(Ljava/lang/String;)V", &[(&t).into()]).map(|_| ())
+        let o = env.call_method(act, "lastName", "()Ljava/lang/String;", &[])?.l()?;
+        if o.is_null() { Ok(None) } else { Ok(Some(String::from(env.get_string(&JString::from(o))?))) }
     })
+    .ok()
+    .flatten()
 }
 
-/// Hand the position to Chess PGN Master. Ok(false) = the app is not installed.
-pub fn send_to_pgn_master(fen: &str, pgn: &str) -> Result<bool, String> {
-    with_activity(|env, act| {
-        let f = env.new_string(fen)?;
-        let p = env.new_string(pgn)?;
-        env.call_method(act, "sendToPgnMaster", "(Ljava/lang/String;Ljava/lang/String;)Z", &[(&f).into(), (&p).into()])?
-            .z()
-    })
-}
-
-/// Open Chess PGN Master in Google Play.
-pub fn open_pgn_master_in_store() {
-    let _ = with_activity(|env, act| env.call_method(act, "openPgnMasterInStore", "()V", &[]).map(|_| ()));
+/// Re-open the last PGN; the result arrives via `take_picked`.
+pub fn open_last() -> Result<(), String> {
+    with_activity(|env, act| env.call_method(act, "openLast", "()V", &[]).map(|_| ()))
 }

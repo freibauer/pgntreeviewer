@@ -6,8 +6,7 @@
 use crate::pgn;
 use eframe::egui;
 use egui::{Color32, ColorImage, FontId, Key, Pos2, Rect, Sense, Stroke, TextureHandle, TextureOptions, Vec2};
-use shakmaty::fen::Fen;
-use shakmaty::{Color, EnPassantMode, File, Position, Rank, Role, Square};
+use shakmaty::{Color, File, Position, Rank, Role, Square};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -77,11 +76,10 @@ struct App {
     /// Android: areas covered by status / navigation bar [left, top, right, bottom] in points.
     insets: [f32; 4],
     show_info: bool,
-    /// Android: Chess PGN Master is missing -> offer installing it.
-    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
-    show_install: bool,
-    /// Short confirmation text and the time until it is shown.
-    notice: Option<(String, f64)>,
+    /// Name of the last opened PGN (for "Open last PGN").
+    last_name: Option<String>,
+    /// Desktop: path of the last opened PGN (remembered across starts, never opened automatically).
+    last_path: Option<PathBuf>,
 }
 
 impl App {
@@ -97,6 +95,12 @@ impl App {
             }
         }
         let stored_flip = cc.storage.and_then(|s| s.get_string("flip")).as_deref() == Some("1");
+        // Desktop: last opened file, offered via "Open last PGN" (not opened automatically).
+        let last_path = cc
+            .storage
+            .and_then(|s| s.get_string("last_file"))
+            .map(PathBuf::from)
+            .filter(|p| p.exists());
 
         // The viewer always starts empty; the user picks the PGN via "Open".
         let mut app = Self {
@@ -113,8 +117,11 @@ impl App {
             frames: 0,
             insets: [0.0; 4],
             show_info: std::env::var_os("PGNVIEWER_INFO").is_some(),
-            show_install: false,
-            notice: None,
+            last_name: last_path
+                .as_ref()
+                .and_then(|p| p.file_name())
+                .map(|n| n.to_string_lossy().into_owned()),
+            last_path,
         };
         // Test aid only (used for screenshots): PGNVIEWER_FILE preloads a file.
         if let Some(p) = std::env::var_os("PGNVIEWER_FILE") {
@@ -135,6 +142,8 @@ impl App {
                 let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                 if self.load_text(&text, &name, keep_position) {
                     self.path = Some(path.to_path_buf());
+                    self.last_path = Some(std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()));
+                    self.last_name = Some(name);
                 }
             }
             Err(e) => self.status = format!("Cannot read {}: {e}", path.display()),
@@ -175,6 +184,20 @@ impl App {
     }
 
     #[cfg(target_os = "android")]
+    fn open_last(&mut self) {
+        if let Err(e) = crate::android::open_last() {
+            self.status = format!("Cannot open last PGN: {e}");
+        }
+    }
+
+    #[cfg(not(target_os = "android"))]
+    fn open_last(&mut self) {
+        if let Some(p) = self.last_path.clone() {
+            self.load(&p, false);
+        }
+    }
+
+    #[cfg(target_os = "android")]
     fn open_dialog(&mut self) {
         match crate::android::open_picker() {
             Ok(()) => self.status.clear(),
@@ -193,6 +216,7 @@ impl App {
             Some(Err(e)) => self.status = e,
             None => {}
         }
+        self.last_name = crate::android::last_name();
         match crate::android::insets_px() {
             Ok(px) => {
                 let ppp = ctx.pixels_per_point();
@@ -273,43 +297,6 @@ impl App {
         }
     }
 
-    fn current_fen(&self) -> Option<String> {
-        let t = self.tree.as_ref()?;
-        Some(Fen::from_position(&t.nodes[self.current].pos, EnPassantMode::Legal).to_string())
-    }
-
-    /// Short confirmation shown for 2 s in the grey info strip.
-    fn notify(&mut self, ctx: &egui::Context, text: &str) {
-        self.notice = Some((text.to_string(), ctx.input(|i| i.time) + 2.0));
-        ctx.request_repaint_after(std::time::Duration::from_millis(2100));
-    }
-
-    fn copy_fen(&mut self, ctx: &egui::Context) {
-        let Some(fen) = self.current_fen() else { return };
-        #[cfg(target_os = "android")]
-        if let Err(e) = crate::android::copy_text(&fen) {
-            self.status = format!("Cannot copy FEN: {e}");
-            return;
-        }
-        #[cfg(not(target_os = "android"))]
-        ctx.copy_text(fen);
-        self.notify(ctx, "FEN copied to clipboard");
-    }
-
-    /// "Eng": hand the current position to Chess PGN Master (Android only).
-    #[cfg(target_os = "android")]
-    fn send_to_engine(&mut self) {
-        let (Some(fen), Some(tree)) = (self.current_fen(), &self.tree) else { return };
-        let line = current_line(tree, self.current);
-        let event = self.title().replace('"', "'");
-        let pgn = format!("[Event \"{event}\"]\n[SetUp \"1\"]\n[FEN \"{fen}\"]\n\n{{ {line} }} *\n");
-        match crate::android::send_to_pgn_master(&fen, &pgn) {
-            Ok(true) => self.status.clear(),
-            Ok(false) => self.show_install = true,
-            Err(e) => self.status = format!("Cannot start Chess PGN Master: {e}"),
-        }
-    }
-
     fn title(&self) -> String {
         if let Some(t) = &self.tree {
             for key in ["ChapterName", "Event"] {
@@ -350,6 +337,9 @@ impl App {
 impl eframe::App for App {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         storage.set_string("flip", if self.flip { "1" } else { "0" }.into());
+        if let Some(p) = &self.last_path {
+            storage.set_string("last_file", p.to_string_lossy().into_owned());
+        }
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -439,9 +429,6 @@ impl eframe::App for App {
                             {
                                 self.load(&p, true);
                             }
-                            if ui.button("Flip board (F)").clicked() {
-                                self.flip = !self.flip;
-                            }
                             ui.separator();
                             if ui.button("Info…").clicked() {
                                 self.show_info = true;
@@ -461,19 +448,14 @@ impl eframe::App for App {
             .show(ui, |ui| {
                 // Only backwards navigation: going forward = tapping a move in the list.
                 // The two buttons share the full width so they are easy to reach.
-                // Left: "Eng" (Android: open position in Chess PGN Master) and "FEN" (copy).
+                // [Flip] [start position] [one move back], sharing the full width.
                 let has_tree = self.tree.is_some();
                 let can_back = self.tree.as_ref().is_some_and(|t| t.nodes[self.current].parent.is_some());
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
-                    let n = if cfg!(target_os = "android") { 4.0 } else { 3.0 };
-                    let size = Vec2::new(ui.available_width() / n, 52.0);
-                    #[cfg(target_os = "android")]
-                    if text_button_sized(ui, "Eng", "Analyse the position in Chess PGN Master", has_tree, size).clicked() {
-                        self.send_to_engine();
-                    }
-                    if text_button_sized(ui, "FEN", "Copy the FEN of this position", has_tree, size).clicked() {
-                        self.copy_fen(&ctx);
+                    let size = Vec2::new(ui.available_width() / 3.0, 52.0);
+                    if text_button_sized(ui, "Flip", "Flip board (F)", has_tree, size).clicked() {
+                        self.flip = !self.flip;
                     }
                     if icon_button_sized(ui, Icon::Start, "Start position (Home)", can_back, size).clicked() {
                         self.to_start();
@@ -483,36 +465,6 @@ impl eframe::App for App {
                     }
                 });
             });
-
-        // ---------------- "Chess PGN Master not installed" ----------------
-        #[cfg(target_os = "android")]
-        if self.show_install {
-            let modal = egui::Modal::new(egui::Id::new("install")).show(&ctx, |ui| {
-                ui.set_width(300.0);
-                ui.vertical_centered(|ui| {
-                    ui.label(egui::RichText::new("Chess PGN Master").size(20.0).strong());
-                    ui.add_space(8.0);
-                    ui.label(
-                        egui::RichText::new("is not installed. \"Eng\" opens the position in this app for engine analysis.")
-                            .size(16.0),
-                    );
-                    ui.add_space(12.0);
-                    ui.horizontal(|ui| {
-                        let store = ui.button(egui::RichText::new("Install (Google Play)").size(17.0)).clicked();
-                        let cancel = ui.button(egui::RichText::new("Cancel").size(17.0)).clicked();
-                        if store {
-                            crate::android::open_pgn_master_in_store();
-                        }
-                        store || cancel
-                    })
-                    .inner
-                })
-                .inner
-            });
-            if modal.inner || modal.should_close() {
-                self.show_install = false;
-            }
-        }
 
         // ---------------- info dialog ----------------
         if self.show_info {
@@ -546,6 +498,15 @@ impl eframe::App for App {
                             .min_size(Vec2::new(200.0, 44.0));
                         if ui.add(open).clicked() {
                             self.open_dialog();
+                        }
+                        if let Some(name) = self.last_name.clone() {
+                            ui.add_space(12.0);
+                            let last = egui::Button::new(egui::RichText::new("Open last PGN").size(20.0))
+                                .min_size(Vec2::new(200.0, 44.0));
+                            if ui.add(last).on_hover_text(&name).clicked() {
+                                self.open_last();
+                            }
+                            ui.label(egui::RichText::new(name).size(14.0).color(Color32::GRAY));
                         }
                         if !self.status.is_empty() {
                             ui.add_space(12.0);
@@ -586,9 +547,7 @@ impl eframe::App for App {
                 ui.scope_builder(egui::UiBuilder::new().max_rect(right), |ui| {
 
                 // Current line + evaluation of the current position.
-                let now = ui.input(|i| i.time);
-                let notice = self.notice.as_ref().filter(|(_, until)| now < *until).map(|(t, _)| t.clone());
-                let line_text = notice.clone().unwrap_or_else(|| current_line(tree, self.current));
+                let line_text = current_line(tree, self.current);
                 let eval_text = node.eval.map(|e| e.text()).unwrap_or_else(|| "–".into());
                 egui::Frame::new()
                     .fill(Color32::from_rgb(0xf3, 0xf3, 0xf3))

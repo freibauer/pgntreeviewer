@@ -14,30 +14,25 @@ Each continuation row shows (instead of games / score / year / Elo):
 | evaluation | evaluation of the position after the move, parsed from its comment (White's view) |
 
 ## Behaviour
-- Starts **empty**. The user opens the PGN via the Open button or the ⋮ menu.
-  No command-line argument, no remembered last file, no automatic file
-  watching or reloading. "Reload" in the menu re-reads the file only when clicked.
+- Starts **empty**. The user opens the PGN via the Open button or the ⋮ menu, or with
+  **Open last PGN** below the Open button (shown once a file was opened before; never opened automatically).
+  No command-line argument, no automatic file watching or reloading. "Reload" in the menu re-reads the file only when clicked.
+- Last PGN: desktop stores the path (`last_file` in eframe storage). On Android, `MainActivity` keeps the URI with
+  a persistable read permission (picker results) plus a private copy `files/last.pgn` (fallback, e.g. for "Open with").
+  `openLast()` re-reads the URI if possible, else the copy.
 - Plain board: flat light/dark squares (`LIGHT_SQ` / `DARK_SQ` in `main.rs`), no wood
   textures, no background frame. Yellow arrow for the last move.
 - Dark title bar: ← (start position), title (`ChapterName` / `Event` header / file name),
-  open-file icon, ⋮ menu (Open, Reload, Copy FEN, Flip).
+  open-file icon, ⋮ menu (Open, Reload, Info).
 - Right side: grey strip with the current line (start trimmed with "…") and the evaluation of the current position.
   Below it is the list of continuations; click a row to play it, or hover to see the full comment.
-- Dark bottom bar, buttons sharing the full width: [Eng] (Android only) [FEN] [start position] [one move back].
-  Going forward means tapping a move. Flip and Info are in the ⋮ menu only. Copy FEN is the FEN button
-  (Android: via Java `copyText`, because egui's clipboard does not work there). A 2-s confirmation appears in the grey strip.
-- "Eng" (Android): `MainActivity.sendToPgnMaster(fen, pgn)` writes the PGN (SetUp/FEN header, current line as
-  comment) to `cache/position.pgn`, served read-only by `PgnProvider`
-  (`content://io.github.freibauer.pgntreeviewer.pgn/position.pgn`). It then asks `queryIntentActivities` which
-  hand-over Chess PGN Master (Gerhard Kalab, `com.kalab.pgnviewerpro` preferred, else `com.kalab.pgnviewer`)
-  supports, in this order: VIEW file (several MIME types), SEND file (EXTRA_STREAM), SEND text. The first match is started.
-  Plain SEND text (the 2013 recommendation) was rejected by the current version on the user's S21 FE. If nothing matches, the
-  error lists all variants tried. Not installed: modal offering Google Play. The manifest has `<queries>` for both packages.
+- Dark bottom bar, three buttons sharing the full width: [Flip] [start position] [one move back].
+  Going forward means tapping a move. (FEN copy and the Chess PGN Master hand-over were removed at the user's request.)
 - Android back button/gesture (egui `Key::BrowserBack`) = one move back; at the start position
   `moveTaskToBack` (app goes to background).
 - Info dialog: version from Cargo.toml (currently 0.0.1, also the APK versionName) and build date (UTC) from `build.rs`.
 - Keys: ←/→ back/forward, ↑/↓ select row, Enter = forward, Home/End, F = flip.
-- eframe persistence stores only the flip state and window geometry.
+- eframe persistence stores the flip state, the last file path (desktop) and the window geometry.
 
 ## Android
 - APK via `./build-android.sh` (no Gradle): `cargo ndk` builds the `cdylib`,
@@ -54,7 +49,7 @@ Each continuation row shows (instead of games / score / year / Elo):
 - System bars: the NativeActivity surface covers the whole screen (also under status/navigation bar).
   `MainActivity` records the window insets (OnApplyWindowInsetsListener). Rust polls `insets()` and keeps those
   areas free with dark panels. JNI/picker errors are shown in the status line instead of being ignored.
-- Android-specific UI: no Reload, no Copy FEN. Portrait layout (board top, list below) is chosen whenever
+- Android-specific UI: no Reload. Portrait layout (board top, list below) is chosen whenever
   the window is taller than wide, also on desktop.
 - No device or emulator is available here (no KVM access for the user), so the APK is only tested on a real phone.
 

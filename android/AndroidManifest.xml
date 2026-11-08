@@ -4,24 +4,11 @@
 
     <uses-feature android:glEsVersion="0x00020000" android:required="true" />
 
-    <!-- Android 11+: allow checking whether Chess PGN Master (Gerhard Kalab) is installed -->
-    <queries>
-        <package android:name="com.kalab.pgnviewer" />
-        <package android:name="com.kalab.pgnviewerpro" />
-    </queries>
-
     <application
         android:label="PGN Tree Viewer"
         android:icon="@mipmap/ic_launcher"
         android:hasCode="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
-
-        <!-- Serves cache/position.pgn for the "Eng" hand-over to Chess PGN Master -->
-        <provider
-            android:name=".PgnProvider"
-            android:authorities="io.github.freibauer.pgntreeviewer.pgn"
-            android:exported="false"
-            android:grantUriPermissions="true" />
 
         <activity
             android:name=".MainActivity"
